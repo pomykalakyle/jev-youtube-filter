@@ -61,11 +61,19 @@ function renderDebug(card, video, decision) {
   const heading = document.createElement("strong");
   heading.textContent = decision.error
     ? `ERROR · ${decision.error.code}`
-    : `${decision.blocked ? "BLOCK" : "ALLOW"} · ${decision.reason}`;
+    : `${decision.blocked ? "BLOCK" : "ALLOW"} · ${decision.matchedRule || decision.reason}`;
   const details = document.createElement("span");
+  const topScores = Object.entries(decision.scores || {})
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 4)
+    .map(([ruleId, score]) => {
+      const rule = currentSettings?.rules?.find((candidate) => candidate.id === ruleId);
+      return `${rule?.label || ruleId} ${(score * 100).toFixed(0)}%`;
+    })
+    .join(" · ");
   details.textContent = decision.error
     ? decision.error.message
-    : `game ${(decision.probabilities.gaming * 100).toFixed(0)}% · TV/film ${(decision.probabilities.tvClip * 100).toFixed(0)}% · threshold ${(decision.threshold * 100).toFixed(0)}% · ${decision.cached ? "cache" : `${decision.latencyMs}ms`}`;
+    : `${topScores || "no active filters"} · threshold ${(decision.threshold * 100).toFixed(0)}% · ${decision.cached ? "cache" : `${decision.latencyMs}ms`}`;
   const input = document.createElement("span");
   input.textContent = `${video.channel || "Unknown channel"} · ${video.title}`;
   panel.append(heading, details, input);

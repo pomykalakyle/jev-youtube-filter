@@ -18,5 +18,6 @@ jobs:
           node --check content.js
           node --check options.js
           node --check popup.js
+          node --check presets.js
       - name: Check manifest
         run: node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'

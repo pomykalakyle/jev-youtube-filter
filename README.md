@@ -3,8 +3,8 @@
 Jev YouTube Feed Filter is a browser extension that semantically filters recommendations on the YouTube Home page.
 It sends each video's title and channel directly to [Jev](https://typesafe.ai/) and hides recommendations whose configurable probabilities exceed your threshold.
 
-The default rules target video-game-related content and clips, scenes, excerpts, or compilations from scripted television shows and movies.
-Both questions and the blocking threshold are editable.
+The included catalog offers 30 optional filters for common distraction and low-value content patterns, plus custom filters written in plain English.
+The default setup selects video-game content and clips from scripted television shows or movies, but neither category is hard-coded.
 
 ## Features
 
@@ -13,6 +13,8 @@ Both questions and the blocking threshold are editable.
 - Conceals cards while they are being classified
 - Shows authentication, billing, quota, rate-limit, and availability failures
 - Includes optional on-card debug annotations with inputs, probabilities, latency, and cache state
+- Includes 30 curated filter presets and user-authored custom filters
+- Sends only active filters to Jev and adjusts batch size to keep request fan-out bounded
 - Stores the user's Jev API key only in extension-local browser-profile storage
 - Keeps the credential unavailable to YouTube and other content scripts
 - Includes an exportable local decision log
@@ -46,8 +48,10 @@ Load it in Brave:
 2. Enable **Developer mode**.
 3. Choose **Load unpacked**.
 4. Select the cloned `jev-youtube-filter` directory.
-5. Open the extension's **Details**, then **Extension options**.
-6. Paste your Jev API key and choose **Save and test**.
+5. The onboarding page opens automatically.
+6. Follow its link to create a Jev API key, paste the key, and choose **Save and test**.
+
+If the onboarding page is closed, open the extension's **Details**, then **Extension options**.
 
 In a macOS folder picker, press **Command–Shift–G** to paste a directory path directly.
 Chrome, Edge, Arc, and other Chromium browsers use the equivalent extensions-management page.
@@ -71,7 +75,8 @@ YouTube Home card
     -> hide or reveal the card
 ```
 
-The extension groups up to 20 videos into one request with two independent questions per video.
+The extension adjusts each batch to stay near 40 total questions.
+With the two default filters, that means up to 20 videos per request.
 In prototype testing, a 20-video and 40-question request completed in roughly 400 ms.
 Actual latency depends on the network and Jev service.
 
@@ -102,6 +107,7 @@ node --check background.js
 node --check content.js
 node --check options.js
 node --check popup.js
+node --check presets.js
 node -e 'JSON.parse(require("fs").readFileSync("manifest.json", "utf8"))'
 ```
 

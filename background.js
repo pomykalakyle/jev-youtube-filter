@@ -1,11 +1,15 @@
+importScripts("presets.js");
+
 const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 const MAX_CACHE_ENTRIES = 3000;
 const MAX_LOG_ENTRIES = 500;
 const BATCH_WINDOW_MS = 80;
 const MAX_BATCH_SIZE = 20;
-const CACHE_VERSION = 2;
+const MAX_QUESTIONS_PER_REQUEST = 40;
+const CACHE_VERSION = 3;
 const LEGACY_TV_CLIP_QUESTION =
   "Is this video primarily a clip or compilation from a television show or movie?";
+const PRESET_BY_ID = Object.fromEntries(JEV_FILTER_PRESETS.map((preset) => [preset.id, preset]));
 let memoryCache = null;
 let memoryLog = null;
 let logLoadPromise = null;
@@ -20,9 +24,7 @@ const DEFAULT_SETTINGS = {
   debugMode: false,
   hideOnError: true,
   threshold: 0.7,
-  gamingQuestion: "Is this video primarily related to video games?",
-  tvClipQuestion:
-    "Would this video's main content itself consist of footage or scenes from a scripted television show or movie? Answer yes for clips, compilations, scene edits, excerpts, and fan-channel uploads. When a channel is named after a show or film franchise and the title describes something happening to or involving its fictional characters, answer yes even if the title is phrased as a question. Answer no when the main content is someone discussing, explaining, evaluating, ranking, reviewing, reacting to, or reporting on the work, even if the title does not literally say review, analysis, or essay.",
+  rules: [PRESET_BY_ID.video_games, PRESET_BY_ID.tv_movie_clips].map((rule) => ({ ...rule })),
 };
 
 /** Prevents content scripts and webpages from reading extension-local data directly. */
@@ -34,12 +36,42 @@ async function restrictStorageAccess() {
 
 void restrictStorageAccess();
 
-/** Returns saved settings merged with current defaults. */
+/** Sanitizes persisted filter rules before using them in requests. */
+function normalizeRules(rules) {
+  if (!Array.isArray(rules)) return [];
+  return rules
+    .slice(0, 30)
+    .map((rule, index) => ({
+      id: String(rule.id || `custom_${index}`).replace(/[^a-z0-9_]/gi, "_").slice(0, 64),
+      label: String(rule.label || "Custom filter").trim().slice(0, 80),
+      description: String(rule.description || "").trim().slice(0, 180),
+      question: String(rule.question || "").trim().slice(0, 1200),
+    }))
+    .filter((rule) => rule.label && rule.question);
+}
+
+/** Returns saved settings merged with current defaults and migrates legacy questions. */
 async function getSettings() {
   const stored = await chrome.storage.local.get("settings");
-  const settings = { ...DEFAULT_SETTINGS, ...(stored.settings || {}) };
-  if (settings.tvClipQuestion === LEGACY_TV_CLIP_QUESTION) {
-    settings.tvClipQuestion = DEFAULT_SETTINGS.tvClipQuestion;
+  const saved = stored.settings || {};
+  const { gamingQuestion, tvClipQuestion, ...savedSettings } = saved;
+  const migratedRules = Array.isArray(saved.rules)
+    ? normalizeRules(saved.rules)
+    : normalizeRules([
+        {
+          ...PRESET_BY_ID.video_games,
+          question: gamingQuestion || PRESET_BY_ID.video_games.question,
+        },
+        {
+          ...PRESET_BY_ID.tv_movie_clips,
+          question:
+            !tvClipQuestion || tvClipQuestion === LEGACY_TV_CLIP_QUESTION
+              ? PRESET_BY_ID.tv_movie_clips.question
+              : tvClipQuestion,
+        },
+      ]);
+  const settings = { ...DEFAULT_SETTINGS, ...savedSettings, rules: migratedRules };
+  if (!Array.isArray(saved.rules) || gamingQuestion || tvClipQuestion) {
     memoryCache = {};
     await chrome.storage.local.set({
       settings,
@@ -52,9 +84,11 @@ async function getSettings() {
 
 /** Saves settings and invalidates decisions made under older instructions. */
 async function saveSettings(settings) {
+  const { gamingQuestion: _gamingQuestion, tvClipQuestion: _tvClipQuestion, ...current } = settings;
   const normalized = {
     ...DEFAULT_SETTINGS,
-    ...settings,
+    ...current,
+    rules: normalizeRules(settings.rules),
     threshold: Math.min(0.99, Math.max(0.01, Number(settings.threshold))),
   };
   memoryCache = {};
@@ -167,10 +201,13 @@ function providerMessage(payload) {
   const value = payload?.error ?? payload;
   if (typeof value === "string") return value.slice(0, 300);
   if (value && typeof value === "object") {
-    return String(value.message || value.detail || value.code || "Jev rejected the request.").slice(
-      0,
-      300,
-    );
+    const message =
+      value.message ||
+      value.detail?.message ||
+      value.error?.message ||
+      value.detail?.error_type ||
+      value.code;
+    if (typeof message === "string") return message.slice(0, 300);
   }
   return "Jev rejected the request.";
 }
@@ -194,24 +231,20 @@ function normalizeError(error, status = 0, payload = null) {
   };
 }
 
-/** Converts Jev probabilities into the extension's block decision. */
-function buildDecision(probabilities, settings, model, latencyMs) {
-  const gamingProbability = Number(probabilities?.gaming);
-  const tvClipProbability = Number(probabilities?.tvClip);
-  if (!Number.isFinite(gamingProbability) || !Number.isFinite(tvClipProbability)) {
+/** Converts Jev rule scores into the extension's block decision. */
+function buildDecision(scores, settings, model, latencyMs) {
+  const entries = settings.rules.map((rule) => [rule.id, Number(scores?.[rule.id])]);
+  if (entries.some(([, score]) => !Number.isFinite(score))) {
     throw normalizeError(new Error("Jev returned invalid probabilities."), 200);
   }
-  const blocked =
-    gamingProbability >= settings.threshold || tvClipProbability >= settings.threshold;
-  const reason = blocked
-    ? gamingProbability >= tvClipProbability
-      ? "video_game_related"
-      : "tv_or_movie_clip"
-    : "allowed";
+  const [topRuleId, topScore] = entries.sort((left, right) => right[1] - left[1])[0] || [null, 0];
+  const matchedRule = settings.rules.find((rule) => rule.id === topRuleId) || null;
+  const blocked = topScore >= settings.threshold;
   return {
     blocked,
-    reason,
-    probabilities: { gaming: gamingProbability, tvClip: tvClipProbability },
+    reason: blocked ? topRuleId : "allowed",
+    matchedRule: blocked ? matchedRule?.label || topRuleId : null,
+    scores: Object.fromEntries(entries),
     threshold: settings.threshold,
     latencyMs,
     model: model || "unknown",
@@ -222,6 +255,10 @@ function buildDecision(probabilities, settings, model, latencyMs) {
 /** Requests one uncached Jev decision directly from the extension worker. */
 async function requestDecision(video, settings) {
   const startedAt = performance.now();
+  const questions = {};
+  settings.rules.forEach((rule, index) => {
+    questions[`rule_${index}`] = { type: "noul", instructions: rule.question };
+  });
   let response;
   try {
     const apiKey = await getApiKey();
@@ -234,16 +271,7 @@ async function requestDecision(video, settings) {
       body: JSON.stringify({
         model: "jev-latest",
         state: { title: video.title, channel: video.channel },
-        questions: {
-          video_game_related: {
-            type: "noul",
-            instructions: settings.gamingQuestion,
-          },
-          tv_or_movie_clip: {
-            type: "noul",
-            instructions: settings.tvClipQuestion,
-          },
-        },
+        questions,
       }),
     });
   } catch (error) {
@@ -260,14 +288,17 @@ async function requestDecision(video, settings) {
     throw normalizeError(new Error("Classifier request failed."), response.status, payload);
   }
 
-  return buildDecision(
-    {
-      gaming: payload.answers?.video_game_related?.noul,
-      tvClip: payload.answers?.tv_or_movie_clip?.noul,
-    },
-    settings,
-    payload.model,
-    Math.round(performance.now() - startedAt),
+  const scores = Object.fromEntries(
+    settings.rules.map((rule, index) => [rule.id, payload.answers?.[`rule_${index}`]?.noul]),
+  );
+  return buildDecision(scores, settings, payload.model, Math.round(performance.now() - startedAt));
+}
+
+/** Calculates a batch size that keeps Jev question fan-out bounded. */
+function batchSizeFor(settings) {
+  return Math.min(
+    MAX_BATCH_SIZE,
+    Math.max(1, Math.floor(MAX_QUESTIONS_PER_REQUEST / Math.max(1, settings.rules.length))),
   );
 }
 
@@ -284,7 +315,7 @@ function scheduleBatch() {
 async function flushBatch() {
   if (batchRunning || batchQueue.length === 0) return;
   batchRunning = true;
-  const batch = batchQueue.splice(0, MAX_BATCH_SIZE);
+  const batch = batchQueue.splice(0, batchSizeFor(batchQueue[0].settings));
   const settings = batch[0].settings;
   const startedAt = performance.now();
   try {
@@ -295,16 +326,14 @@ async function flushBatch() {
       channel: entry.video.channel,
     }));
     const questions = {};
-    batch.forEach((_entry, index) => {
+    batch.forEach((entry, index) => {
       const reference = `video_${index}`;
-      questions[`${reference}_gaming`] = {
-        type: "noul",
-        instructions: `For ${reference} only: ${settings.gamingQuestion}`,
-      };
-      questions[`${reference}_tv`] = {
-        type: "noul",
-        instructions: `For ${reference} only: ${settings.tvClipQuestion}`,
-      };
+      entry.settings.rules.forEach((rule, ruleIndex) => {
+        questions[`${reference}_rule_${ruleIndex}`] = {
+          type: "noul",
+          instructions: `For ${reference} only: ${rule.question}`,
+        };
+      });
     });
     const response = await fetch(JEV_URL, {
       method: "POST",
@@ -336,16 +365,14 @@ async function flushBatch() {
     });
     batch.forEach((entry, index) => {
       try {
+        const scores = Object.fromEntries(
+          entry.settings.rules.map((rule, ruleIndex) => [
+            rule.id,
+            payload.answers?.[`video_${index}_rule_${ruleIndex}`]?.noul,
+          ]),
+        );
         entry.resolve(
-          buildDecision(
-            {
-              gaming: payload.answers?.[`video_${index}_gaming`]?.noul,
-              tvClip: payload.answers?.[`video_${index}_tv`]?.noul,
-            },
-            entry.settings,
-            payload.model,
-            latencyMs,
-          ),
+          buildDecision(scores, entry.settings, payload.model, latencyMs),
         );
       } catch (error) {
         entry.reject(error);
@@ -395,7 +422,7 @@ async function clearApiKey() {
 function enqueueBatch(video, settings) {
   return new Promise((resolve, reject) => {
     batchQueue.push({ video, settings, resolve, reject });
-    if (!batchRunning && batchQueue.length >= MAX_BATCH_SIZE) {
+    if (!batchRunning && batchQueue.length >= batchSizeFor(settings)) {
       if (batchTimer) clearTimeout(batchTimer);
       batchTimer = null;
       void flushBatch();
@@ -407,7 +434,13 @@ function enqueueBatch(video, settings) {
 
 /** Runs a small uncached provider request and updates visible health state. */
 async function testClassifier() {
-  const settings = await getSettings();
+  const currentSettings = await getSettings();
+  const settings = {
+    ...currentSettings,
+    rules: currentSettings.rules.length
+      ? currentSettings.rules
+      : normalizeRules([PRESET_BY_ID.video_games]),
+  };
   try {
     const decision = await requestDecision(
       {
@@ -436,6 +469,15 @@ async function classify(video) {
   const settings = await getSettings();
   if (!settings.enabled) {
     return { blocked: false, reason: "filter_disabled", disabled: true };
+  }
+  if (settings.rules.length === 0) {
+    return {
+      blocked: false,
+      reason: "no_filters_configured",
+      scores: {},
+      threshold: settings.threshold,
+      cached: false,
+    };
   }
 
   const cache = await getCache();
@@ -556,7 +598,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   await restrictStorageAccess();
   const stored = await chrome.storage.local.get("settings");
   if (!stored.settings) {
@@ -564,6 +606,9 @@ chrome.runtime.onInstalled.addListener(async () => {
       settings: DEFAULT_SETTINGS,
       decisionCacheVersion: CACHE_VERSION,
     });
+  }
+  if (details.reason === "install") {
+    await chrome.runtime.openOptionsPage();
   }
 });
 

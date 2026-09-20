@@ -8,61 +8,130 @@
   </head>
   <body class="options">
     <main>
-      <h1>Jev YouTube Feed Filter</h1>
-      <p class="lede">Change the exact questions Jev answers for every recommendation.</p>
+      <header class="page-header">
+        <p class="eyebrow">Jev YouTube Feed Filter</p>
+        <h1>Keep your feed yours.</h1>
+        <p class="lede">Choose what you do not want YouTube recommending. Jev checks each video before it appears.</p>
+      </header>
 
-      <form id="credential-form">
-        <h2>Jev API key</h2>
-        <p class="lede">
-          Your key stays in this browser profile, is not synced, and is available only to trusted
-          extension pages—not YouTube or other websites. Browser-local storage is not the same as
-          macOS Keychain encryption.
-        </p>
-        <label>
-          API key
-          <input
-            id="api-key"
-            type="password"
-            autocomplete="off"
-            placeholder="Paste a Jev API key"
-          />
-        </label>
-        <div class="actions">
-          <button type="submit">Save and test</button>
-          <button id="test-key" type="button" class="secondary">Test current key</button>
-          <button id="remove-key" type="button" class="secondary">Remove key</button>
-          <span id="credential-status" role="status"></span>
+      <section id="onboarding" class="connection-panel" aria-labelledby="onboarding-title">
+        <div class="setup-copy">
+          <p class="section-label">One-time setup</p>
+          <h2 id="onboarding-title">Connect Jev</h2>
+          <p>Jev does the classification. You will need a personal API key from TypeSafe.</p>
         </div>
-      </form>
 
-      <form id="settings-form">
-        <label>
-          Video-game question
-          <textarea id="gaming-question" rows="3" required></textarea>
-        </label>
-        <label>
-          TV/movie-clip question
-          <textarea id="tv-question" rows="3" required></textarea>
-        </label>
-        <label>
-          Block probability threshold
-          <input id="threshold" type="number" min="0.01" max="0.99" step="0.01" required />
-        </label>
-        <label class="toggle">
-          <input id="hide-on-error" type="checkbox" />
-          <span>Hide recommendations when classification fails</span>
-        </label>
-        <label class="toggle">
-          <input id="debug-mode" type="checkbox" />
-          <span>Show classification details below cards</span>
-        </label>
-        <div class="actions">
-          <button type="submit">Save and reclassify</button>
+        <div class="setup-new-key">
+          <div class="setup-step">
+            <span class="step-number">1</span>
+            <div>
+              <h3>Create a Jev key</h3>
+              <p>Sign in, create a key named “YouTube Feed Filter,” and copy it.</p>
+            </div>
+            <a
+              id="open-jev-keys"
+              class="button-link"
+              href="https://console.typesafe.ai/settings/keys"
+              target="_blank"
+              rel="noreferrer"
+            >Create key <span aria-hidden="true">↗</span></a>
+          </div>
+
+          <div class="setup-step">
+            <span class="step-number">2</span>
+            <div>
+              <h3>Paste it here</h3>
+              <p>We will save it locally and verify it with one Jev request.</p>
+            </div>
+            <form id="credential-form" class="credential-form">
+              <input
+                id="api-key"
+                type="password"
+                autocomplete="off"
+                aria-label="Jev API key"
+                placeholder="Paste Jev API key"
+              />
+              <button type="submit">Connect</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="connected-view">
+          <div>
+            <span class="status-mark" aria-hidden="true">✓</span>
+            <strong>Jev is connected</strong>
+          </div>
+          <div class="actions">
+            <button id="test-key" type="button" class="quiet">Test connection</button>
+            <button id="change-key" type="button" class="quiet">Change key</button>
+            <button id="remove-key" type="button" class="quiet danger">Disconnect</button>
+          </div>
+        </div>
+
+        <p id="credential-status" class="credential-status" role="status"></p>
+        <details>
+          <summary>How the key is stored</summary>
+          <p>
+            It stays in this browser profile, is not synced, and is available only to trusted
+            extension pages—not YouTube or other websites. Browser-local storage is not the same as
+            an operating-system credential vault.
+          </p>
+        </details>
+      </section>
+
+      <form id="settings-form" class="requires-connection">
+        <div class="section-heading">
+          <div>
+            <p class="section-label">Your filters</p>
+            <h2>What should disappear?</h2>
+          </div>
+          <select id="preset-picker" aria-label="Add a filter">
+            <option value="">Add a filter…</option>
+          </select>
+        </div>
+
+        <div id="active-rules" class="rule-list"></div>
+
+        <div id="custom-rule-builder" class="custom-rule-builder" hidden>
+          <label>
+            Filter name
+            <input id="custom-rule-label" type="text" maxlength="80" placeholder="e.g. Productivity advice" />
+          </label>
+          <label>
+            What should Jev block?
+            <textarea id="custom-rule-question" rows="3" maxlength="1200" placeholder="Describe the videos you do not want to see."></textarea>
+          </label>
+          <div class="actions">
+            <button id="add-custom-rule" type="button">Add custom filter</button>
+            <button id="cancel-custom-rule" type="button" class="quiet">Cancel</button>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <label>
+            Block threshold
+            <input id="threshold" type="number" min="0.01" max="0.99" step="0.01" required />
+            <small>Higher values block only more certain matches.</small>
+          </label>
+          <div class="toggle-stack">
+            <label class="toggle">
+              <input id="hide-on-error" type="checkbox" />
+              <span>Hide videos when Jev is unavailable</span>
+            </label>
+            <label class="toggle">
+              <input id="debug-mode" type="checkbox" />
+              <span>Show classification details on YouTube</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-footer">
+          <button type="submit">Save changes</button>
           <span id="save-status" role="status"></span>
         </div>
       </form>
 
-      <section>
+      <section id="decisions-section" class="requires-connection">
         <div class="section-heading">
           <h2>Recent decisions</h2>
           <div class="actions">
@@ -79,8 +148,8 @@
               <tr>
                 <th>Time</th>
                 <th>Decision</th>
-                <th>Game</th>
-                <th>TV/film</th>
+                <th>Top score</th>
+                <th>Filter</th>
                 <th>Channel</th>
                 <th>Title</th>
                 <th>Details</th>
@@ -91,6 +160,7 @@
         </div>
       </section>
     </main>
+    <script src="presets.js"></script>
     <script src="options.js"></script>
   </body>
 </html>
