@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Jev YouTube Feed Filter",
+  "version": "0.3.0",
+  "description": "Classifies YouTube Home recommendations with Jev and hides unwanted topics.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://api.typesafe.ai/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "YouTube Feed Filter",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_start"
+    }
+  ]
+}

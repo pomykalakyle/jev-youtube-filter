@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jev YouTube Feed Filter</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="popup">
+    <header>
+      <h1>Jev YouTube Feed Filter</h1>
+      <span id="status-dot" class="status-dot unknown"></span>
+    </header>
+    <p id="status-message">Loading status…</p>
+    <dl>
+      <div><dt>Last update</dt><dd id="last-update">—</dd></div>
+      <div><dt>Model</dt><dd id="model">—</dd></div>
+      <div><dt>Cached videos</dt><dd id="cache-size">0</dd></div>
+    </dl>
+    <label class="toggle">
+      <input id="enabled" type="checkbox" />
+      <span>Filtering enabled</span>
+    </label>
+    <label class="toggle">
+      <input id="debug-mode" type="checkbox" />
+      <span>Debug annotations</span>
+    </label>
+    <button id="test-classifier" type="button" class="secondary">Test classifier now</button>
+    <button id="open-options" type="button">Settings and decision log</button>
+    <script src="popup.js"></script>
+  </body>
+</html>

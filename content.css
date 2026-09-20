@@ -1,0 +1,48 @@
+ytd-rich-item-renderer.jev-filter-pending {
+  visibility: hidden !important;
+}
+
+ytd-rich-item-renderer.jev-filter-blocked:not(.jev-filter-debug-visible) {
+  display: none !important;
+}
+
+ytd-rich-item-renderer.jev-filter-error:not(.jev-filter-debug-visible) {
+  display: none !important;
+}
+
+ytd-rich-item-renderer.jev-filter-debug-visible {
+  position: relative !important;
+}
+
+ytd-rich-item-renderer.jev-filter-debug-visible.jev-filter-blocked {
+  filter: grayscale(1);
+  opacity: 0.62;
+}
+
+.jev-filter-debug {
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  color: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  gap: 3px;
+  margin-top: 6px;
+  padding: 7px;
+  position: relative;
+  z-index: 10;
+}
+
+.jev-filter-debug strong {
+  color: #93c5fd;
+}
+
+.jev-filter-blocked .jev-filter-debug strong {
+  color: #fca5a5;
+}
+
+.jev-filter-error .jev-filter-debug strong {
+  color: #fbbf24;
+}
